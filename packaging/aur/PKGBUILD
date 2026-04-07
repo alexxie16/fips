@@ -55,6 +55,8 @@ package() {
     # Config files (from packaging/common/)
     install -Dm0600 packaging/common/fips.yaml "$pkgdir/etc/fips/fips.yaml"
     install -Dm0644 packaging/common/hosts "$pkgdir/etc/fips/hosts"
+    install -Dm0644 packaging/common/peers.allow "$pkgdir/etc/fips/peers.allow"
+    install -Dm0644 packaging/common/peers.deny "$pkgdir/etc/fips/peers.deny"
 
     # System integration (from local source files in $srcdir)
     install -Dm0644 "$srcdir/fips.sysusers" "$pkgdir/usr/lib/sysusers.d/fips.conf"

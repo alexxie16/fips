@@ -11,6 +11,13 @@ node:
     # Or set an explicit key (overrides persistent):
     # nsec: "nsec1..."
 
+  acl:
+    # Optional peer allow/deny lists. ACLs are checked on new peer handshakes.
+    # Use peers.deny with ALL plus explicit entries in peers.allow for
+    # default-deny/private meshes.
+    allow_file: "/etc/fips/peers.allow"
+    deny_file: "/etc/fips/peers.deny"
+
 tun:
   enabled: true
   name: fips0

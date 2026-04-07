@@ -344,6 +344,15 @@ impl Node {
         // If possible_restart was true but peer is no longer in self.peers
         // (removed by another path), fall through to process as new connection.
 
+        if matches!(
+            self.peer_acl_decision(&peer_identity),
+            crate::node::acl::PeerAclDecision::DenyList
+        ) {
+            debug!(npub = %peer_identity.npub(), "Rejected inbound peer by ACL");
+            self.msg1_rate_limiter.complete_handshake();
+            return;
+        }
+
         // Note: we don't early-return if peer is already in self.peers here.
         // promote_connection handles cross-connection resolution via tie-breaker.
 
@@ -608,32 +617,56 @@ impl Node {
             return;
         }
 
-        let conn = self.connections.get_mut(&link_id).unwrap();
+        let (peer_identity, our_index) = {
+            let conn = self.connections.get_mut(&link_id).unwrap();
 
-        // Process Noise msg2
-        let noise_msg2 = &packet.data[header.noise_msg2_offset..];
-        if let Err(e) = conn.complete_handshake(noise_msg2, packet.timestamp_ms) {
-            warn!(
-                link_id = %link_id,
-                error = %e,
-                "Handshake completion failed"
-            );
-            conn.mark_failed();
-            return;
-        }
-
-        // Store their index
-        conn.set_their_index(header.sender_idx);
-        conn.set_source_addr(packet.remote_addr.clone());
-
-        // Get peer identity for promotion
-        let peer_identity = match conn.expected_identity() {
-            Some(id) => *id,
-            None => {
-                warn!(link_id = %link_id, "No identity after handshake");
+            // Process Noise msg2
+            let noise_msg2 = &packet.data[header.noise_msg2_offset..];
+            if let Err(e) = conn.complete_handshake(noise_msg2, packet.timestamp_ms) {
+                warn!(
+                    link_id = %link_id,
+                    error = %e,
+                    "Handshake completion failed"
+                );
+                conn.mark_failed();
                 return;
             }
+
+            // Store their index
+            conn.set_their_index(header.sender_idx);
+            conn.set_source_addr(packet.remote_addr.clone());
+
+            let peer_identity = match conn.expected_identity() {
+                Some(id) => *id,
+                None => {
+                    warn!(link_id = %link_id, "No identity after handshake");
+                    return;
+                }
+            };
+
+            (peer_identity, conn.our_index())
         };
+
+        if matches!(
+            self.peer_acl_decision(&peer_identity),
+            crate::node::acl::PeerAclDecision::DenyList
+        ) {
+            debug!(npub = %peer_identity.npub(), "Rejected outbound peer by ACL");
+            self.pending_outbound.remove(&key);
+            if let Some(link) = self.links.get(&link_id) {
+                let tid = link.transport_id();
+                let addr = link.remote_addr().clone();
+                if let Some(transport) = self.transports.get(&tid) {
+                    transport.close_connection(&addr).await;
+                }
+            }
+            self.connections.remove(&link_id);
+            self.remove_link(&link_id);
+            if let Some(idx) = our_index {
+                let _ = self.index_allocator.free(idx);
+            }
+            return;
+        }
 
         let peer_node_addr = *peer_identity.node_addr();
 

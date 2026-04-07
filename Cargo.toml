@@ -66,13 +66,15 @@ assets = [
     ["target/release/fipstop", "/usr/bin/", "755"],
     ["packaging/common/fips.yaml", "/etc/fips/fips.yaml", "600"],
     ["packaging/common/hosts", "/etc/fips/hosts", "644"],
+    ["packaging/common/peers.allow", "/etc/fips/peers.allow", "644"],
+    ["packaging/common/peers.deny", "/etc/fips/peers.deny", "644"],
     ["packaging/debian/fips.service", "/lib/systemd/system/fips.service", "644"],
     ["packaging/debian/fips-dns.service", "/lib/systemd/system/fips-dns.service", "644"],
     ["packaging/debian/fips.tmpfiles", "/usr/lib/tmpfiles.d/fips.conf", "644"],
     ["target/release/fips-gateway", "/usr/bin/", "755"],
     ["packaging/debian/fips-gateway.service", "/lib/systemd/system/fips-gateway.service", "644"],
 ]
-conf-files = ["/etc/fips/fips.yaml", "/etc/fips/hosts"]
+conf-files = ["/etc/fips/fips.yaml", "/etc/fips/hosts", "/etc/fips/peers.allow", "/etc/fips/peers.deny"]
 
 [dev-dependencies]
 tempfile = "3.15"

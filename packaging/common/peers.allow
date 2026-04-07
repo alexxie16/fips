@@ -1,0 +1,16 @@
+# FIPS Peer Allow List
+#
+# Optional list of explicitly allowed peer npubs.
+#
+# Evaluation order:
+#   1. If a peer matches an entry here, it is permitted.
+#   2. Otherwise peers.deny is checked.
+#   3. Otherwise the peer is permitted (default-open).
+#
+# Format:
+#   - One entry per line
+#   - Use ALL to match any peer
+#   - Lines starting with # are comments
+#
+# Example:
+#   npub10yffd020a4ag8zcy75f9pruq3rnghvvhd5hphl9s62zgp35s560qrksp9u
