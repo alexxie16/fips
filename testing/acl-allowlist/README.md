@@ -58,6 +58,12 @@ Start the ACL test mesh:
 docker compose -f testing/acl-allowlist/docker-compose.yml up -d --build
 ```
 
+Or run the full integration check:
+
+```bash
+./testing/acl-allowlist/test.sh
+```
+
 The ACL harness pins the expected test entrypoint explicitly so it does not
 accidentally reuse an older `fips-test:latest` image with a different startup
 script.
