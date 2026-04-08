@@ -1,12 +1,16 @@
 # ACL Allowlist Test
 
-Four Docker nodes share the same ACL files mounted at the hardcoded runtime paths:
+Six Docker nodes use per-node ACL files mounted at the hardcoded runtime paths:
 
-- `node-a` and `node-b` are in `peers.allow`
-- `node-c` and `node-d` are not
+- `node-a` and `node-b` carry the insider allowlist (`a`, `b`, `e`, `f`)
+- `node-c` and `node-d` each carry a self-only allowlist containing their own npub
+- `node-e` and `node-f` do not mount any ACL files locally
 
-Because `peers.allow` is non-empty, only A and B should be permitted to join.
-`peers.deny` is intentionally empty in this test.
+This lets us test three different node behaviors at once:
+
+- insiders (`a`, `b`) explicitly allow `a`, `b`, `e`, and `f`
+- outsiders (`c`, `d`) only allow themselves, so they reject outbound connects to `a`
+- allowed remotes (`e`, `f`) rely on the insider ACLs and do not need local ACL files
 
 ## Test Identities
 
@@ -27,6 +31,15 @@ Denied:
 - `node-d`
   - `npub1n9lpnv0592cc2ps6nm0ca3qls642vx7yjsv35rkxqzj2vgds52sqgpverl`
   - `d102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1fd0`
+
+Additional allowed:
+
+- `node-e`
+  - `npub1x5z9rwzzm26q9verutx4aajhf2zw2pyp34c6whhde2zduxqav40qgq36l6`
+  - `nsec1egyrmekfw3u4l88v8zhrak9uht503s2kvn9v49tqgp6c5l2yuxgsv386l0`
+- `node-f`
+  - `npub1ytrut7gjncn2zfnhn56c0zgftf0w6p99gf6fu8j73hzw5603zglqc9av6c`
+  - `nsec1afh3nysthqh47awpdewcw59wvvp499f8dvlyclmnv4gvpxdk56dsa6eqsn`
 
 Each `fips.key` file contains the bare hex secret above. FIPS accepts hex or
 `nsec1...` in key files.
@@ -54,6 +67,12 @@ ACL paths are fixed in this branch:
 - `/etc/fips/peers.allow`
 - `/etc/fips/peers.deny`
 
+Mounted ACL files in this harness:
+
+- `node-a` and `node-b`: insider allowlist
+- `node-c` and `node-d`: self-only allowlist
+- `node-e` and `node-f`: no ACL files mounted
+
 Inspect peer state:
 
 ```bash
@@ -61,27 +80,29 @@ docker exec fips-acl-a fipsctl show peers
 docker exec fips-acl-b fipsctl show peers
 docker exec fips-acl-c fipsctl show peers
 docker exec fips-acl-d fipsctl show peers
+docker exec fips-acl-e fipsctl show peers
+docker exec fips-acl-f fipsctl show peers
 ```
 
 Expected:
 
-- `node-a` sees `node-b`
+- `node-a` sees `node-b`, `node-e`, and `node-f`
 - `node-b` sees `node-a`
 - `node-c` sees no peers
 - `node-d` sees no peers
+- `node-e` sees `node-a`
+- `node-f` sees `node-a`
 
 Visible rejection logs:
 
 ```bash
-docker compose -f testing/acl-allowlist/docker-compose.yml logs -f node-a node-b node-c node-d
+docker compose -f testing/acl-allowlist/docker-compose.yml logs -f node-a node-b node-c node-d node-e node-f
 ```
 
 You should see warnings like:
 
 ```text
-Rejected peer by ACL ... context=inbound_handshake decision=not in allowlist
 Rejected peer by ACL ... context=outbound_connect decision=not in allowlist
-Rejected peer by ACL ... context=outbound_handshake decision=not in allowlist
 ```
 
 Stop and clean up:

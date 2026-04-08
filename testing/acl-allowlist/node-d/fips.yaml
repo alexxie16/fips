@@ -22,15 +22,3 @@ peers:
       - transport: udp
         addr: "172.31.0.10:2121"
     connect_policy: auto_connect
-  - npub: "npub1tdwa4vjrjl33pcjdpf2t4p027nl86xrx24g4d3avg4vwvayr3g8qhd84le"
-    alias: "node-b"
-    addresses:
-      - transport: udp
-        addr: "172.31.0.11:2121"
-    connect_policy: auto_connect
-  - npub: "npub1cld9yay0u24davpu6c35l4vldrhzvaq66pcqtg9a0j2cnjrn9rtsxx2pe6"
-    alias: "node-c"
-    addresses:
-      - transport: udp
-        addr: "172.31.0.12:2121"
-    connect_policy: auto_connect

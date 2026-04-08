@@ -22,8 +22,6 @@ x-fips-common: &fips-common
     - RUST_LOG=info
   volumes:
     - ../docker/resolv.conf:/etc/resolv.conf:ro
-    - ./acl/peers.allow:/etc/fips/peers.allow:ro
-    - ./acl/peers.deny:/etc/fips/peers.deny:ro
 
 services:
   node-a:
@@ -32,8 +30,8 @@ services:
     hostname: node-a
     volumes:
       - ../docker/resolv.conf:/etc/resolv.conf:ro
-      - ./acl/peers.allow:/etc/fips/peers.allow:ro
-      - ./acl/peers.deny:/etc/fips/peers.deny:ro
+      - ./node-a/peers.allow:/etc/fips/peers.allow:ro
+      - ./node-a/peers.deny:/etc/fips/peers.deny:ro
       - ./node-a/fips.yaml:/etc/fips/fips.yaml:ro
       - ./node-a/fips.key:/etc/fips/fips.key:ro
     networks:
@@ -46,8 +44,8 @@ services:
     hostname: node-b
     volumes:
       - ../docker/resolv.conf:/etc/resolv.conf:ro
-      - ./acl/peers.allow:/etc/fips/peers.allow:ro
-      - ./acl/peers.deny:/etc/fips/peers.deny:ro
+      - ./node-b/peers.allow:/etc/fips/peers.allow:ro
+      - ./node-b/peers.deny:/etc/fips/peers.deny:ro
       - ./node-b/fips.yaml:/etc/fips/fips.yaml:ro
       - ./node-b/fips.key:/etc/fips/fips.key:ro
     networks:
@@ -60,8 +58,8 @@ services:
     hostname: node-c
     volumes:
       - ../docker/resolv.conf:/etc/resolv.conf:ro
-      - ./acl/peers.allow:/etc/fips/peers.allow:ro
-      - ./acl/peers.deny:/etc/fips/peers.deny:ro
+      - ./node-c/peers.allow:/etc/fips/peers.allow:ro
+      - ./node-c/peers.deny:/etc/fips/peers.deny:ro
       - ./node-c/fips.yaml:/etc/fips/fips.yaml:ro
       - ./node-c/fips.key:/etc/fips/fips.key:ro
     networks:
@@ -74,10 +72,34 @@ services:
     hostname: node-d
     volumes:
       - ../docker/resolv.conf:/etc/resolv.conf:ro
-      - ./acl/peers.allow:/etc/fips/peers.allow:ro
-      - ./acl/peers.deny:/etc/fips/peers.deny:ro
+      - ./node-d/peers.allow:/etc/fips/peers.allow:ro
+      - ./node-d/peers.deny:/etc/fips/peers.deny:ro
       - ./node-d/fips.yaml:/etc/fips/fips.yaml:ro
       - ./node-d/fips.key:/etc/fips/fips.key:ro
     networks:
       acl-net:
         ipv4_address: 172.31.0.13
+
+  node-e:
+    <<: *fips-common
+    container_name: fips-acl-e
+    hostname: node-e
+    volumes:
+      - ../docker/resolv.conf:/etc/resolv.conf:ro
+      - ./node-e/fips.yaml:/etc/fips/fips.yaml:ro
+      - ./node-e/fips.key:/etc/fips/fips.key:ro
+    networks:
+      acl-net:
+        ipv4_address: 172.31.0.14
+
+  node-f:
+    <<: *fips-common
+    container_name: fips-acl-f
+    hostname: node-f
+    volumes:
+      - ../docker/resolv.conf:/etc/resolv.conf:ro
+      - ./node-f/fips.yaml:/etc/fips/fips.yaml:ro
+      - ./node-f/fips.key:/etc/fips/fips.key:ro
+    networks:
+      acl-net:
+        ipv4_address: 172.31.0.15
