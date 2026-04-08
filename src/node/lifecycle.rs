@@ -168,6 +168,7 @@ impl Node {
                 .await
             {
                 Ok(()) => return Ok(()),
+                Err(e @ NodeError::AccessDenied(_)) => return Err(e),
                 Err(e) => {
                     debug!(
                         npub = %peer_config.npub,
