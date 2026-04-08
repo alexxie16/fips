@@ -1,26 +1,31 @@
 use super::*;
-use crate::control::queries;
+use crate::ReceivedPacket;
+use crate::node::acl::PeerAclReloader;
 use crate::node::wire::{build_msg1, build_msg2};
 use crate::utils::index::SessionIndex;
+use std::path::PathBuf;
 use std::time::Duration;
 
 fn make_acl_node() -> (tempfile::TempDir, Node) {
     let dir = tempfile::tempdir().unwrap();
-    let mut config = Config::new();
-    config.node.acl.allow_file = dir.path().join("peers.allow");
-    config.node.acl.deny_file = dir.path().join("peers.deny");
-    (dir, Node::new(config).unwrap())
+    let mut node = Node::new(Config::new()).unwrap();
+    node.peer_acl = PeerAclReloader::with_paths(
+        dir.path().join("peers.allow"),
+        dir.path().join("peers.deny"),
+    );
+    (dir, node)
+}
+
+fn allow_path(dir: &tempfile::TempDir) -> PathBuf {
+    dir.path().join("peers.allow")
 }
 
 #[tokio::test]
-async fn test_outbound_connect_denied_by_acl() {
-    let (_dir, mut node) = make_acl_node();
+async fn test_outbound_connect_denied_by_allowlist() {
+    let (dir, mut node) = make_acl_node();
     let denied = Identity::generate();
-    std::fs::write(
-        &node.config().node.acl.deny_file,
-        format!("{}\n", denied.npub()),
-    )
-    .unwrap();
+    let allowed = Identity::generate();
+    std::fs::write(allow_path(&dir), format!("{}\n", allowed.npub())).unwrap();
     node.reload_peer_acl();
 
     let result = node
@@ -39,14 +44,11 @@ async fn test_outbound_connect_denied_by_acl() {
 
 #[tokio::test]
 async fn test_inbound_msg1_denied_by_acl() {
-    let (_dir, mut node_b) = make_acl_node();
+    let (dir, mut node_b) = make_acl_node();
     let node_a = make_node();
+    let allowed = Identity::generate();
 
-    std::fs::write(
-        &node_b.config().node.acl.deny_file,
-        format!("{}\n", node_a.npub()),
-    )
-    .unwrap();
+    std::fs::write(allow_path(&dir), format!("{}\n", allowed.npub())).unwrap();
     node_b.reload_peer_acl();
 
     let peer_b_identity = PeerIdentity::from_pubkey_full(node_b.identity.pubkey_full());
@@ -71,8 +73,9 @@ async fn test_inbound_msg1_denied_by_acl() {
 
 #[tokio::test]
 async fn test_outbound_msg2_denied_after_acl_reload() {
-    let (_dir, mut node_a) = make_acl_node();
+    let (dir, mut node_a) = make_acl_node();
     let node_b = make_node();
+    let allowed = Identity::generate();
     let transport_id = TransportId::new(1);
     let remote_addr = TransportAddr::from_string("127.0.0.1:5001");
     let peer_b_identity = PeerIdentity::from_pubkey_full(node_b.identity.pubkey_full());
@@ -116,13 +119,8 @@ async fn test_outbound_msg2_denied_after_acl_reload() {
     let our_index_b = SessionIndex::new(9);
     let wire_msg2 = build_msg2(our_index_b, our_index_a, &noise_msg2);
 
-    std::fs::write(
-        &node_a.config().node.acl.deny_file,
-        format!("{}\n", node_b.npub()),
-    )
-    .unwrap();
-    let reload = node_a.api_reload_acl();
-    assert_eq!(reload["deny_count"], 1);
+    std::fs::write(allow_path(&dir), format!("{}\n", allowed.npub())).unwrap();
+    assert!(node_a.reload_peer_acl());
 
     let packet = ReceivedPacket::with_timestamp(transport_id, remote_addr, wire_msg2, 1100);
     node_a.handle_msg2(packet).await;
@@ -131,26 +129,4 @@ async fn test_outbound_msg2_denied_after_acl_reload() {
     assert_eq!(node_a.connection_count(), 0);
     assert_eq!(node_a.link_count(), 0);
     assert!(node_a.pending_outbound.is_empty());
-}
-
-#[test]
-fn test_show_acl_query_and_reload_api() {
-    let (_dir, mut node) = make_acl_node();
-    let before = queries::show_acl(&node);
-    assert_eq!(before["allow_count"], 0);
-    assert_eq!(before["deny_count"], 0);
-
-    let allowed = Identity::generate();
-    std::fs::write(
-        &node.config().node.acl.allow_file,
-        format!("{}\n", allowed.npub()),
-    )
-    .unwrap();
-
-    let reloaded = node.api_reload_acl();
-    assert_eq!(reloaded["reloaded"], true);
-    assert_eq!(reloaded["allow_count"], 1);
-
-    let after = queries::show_acl(&node);
-    assert_eq!(after["allow_count"], 1);
 }

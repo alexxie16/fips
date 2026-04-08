@@ -13,7 +13,6 @@ pub async fn dispatch(node: &mut Node, command: &str, params: Option<&Value>) ->
     match command {
         "connect" => connect(node, params).await,
         "disconnect" => disconnect(node, params),
-        "reload_acl" => reload_acl(node),
         _ => Response::error(format!("unknown command: {command}")),
     }
 }
@@ -66,9 +65,4 @@ fn disconnect(node: &mut Node, params: Option<&Value>) -> Response {
         Ok(data) => Response::ok(data),
         Err(msg) => Response::error(msg),
     }
-}
-
-/// Reload peer ACL files.
-fn reload_acl(node: &mut Node) -> Response {
-    Response::ok(node.api_reload_acl())
 }

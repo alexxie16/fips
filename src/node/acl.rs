@@ -1,8 +1,8 @@
 //! Peer access control lists (ACLs) keyed by npub.
 
 use crate::{NodeAddr, PeerIdentity};
-use serde::Serialize;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tracing::{debug, info, warn};
@@ -18,30 +18,48 @@ pub const DEFAULT_PEERS_DENY_PATH: &str = "/etc/fips/peers.deny";
 pub enum PeerAclDecision {
     /// Explicitly permitted by `peers.allow`.
     AllowList,
+    /// Rejected because an allow list exists and this peer is not on it.
+    NotInAllowList,
     /// Explicitly rejected by `peers.deny`.
     DenyList,
-    /// No rule matched; default-open behavior permits the peer.
+    /// No rule matched and no allow list is active.
     DefaultAllow,
 }
 
 impl PeerAclDecision {
     /// Whether the peer is allowed.
     pub fn allowed(self) -> bool {
-        !matches!(self, Self::DenyList)
+        matches!(self, Self::AllowList | Self::DefaultAllow)
     }
 }
 
-/// Serializable ACL state for control-plane visibility.
-#[derive(Debug, Clone, Serialize)]
-pub struct PeerAclSnapshot {
-    pub allow_file: String,
-    pub deny_file: String,
-    pub allow_entries: Vec<String>,
-    pub deny_entries: Vec<String>,
-    pub allow_all: bool,
-    pub deny_all: bool,
-    pub allow_count: usize,
-    pub deny_count: usize,
+impl fmt::Display for PeerAclDecision {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AllowList => write!(f, "allowlist match"),
+            Self::NotInAllowList => write!(f, "not in allowlist"),
+            Self::DenyList => write!(f, "denylist match"),
+            Self::DefaultAllow => write!(f, "default allow"),
+        }
+    }
+}
+
+/// Runtime context for ACL enforcement logging.
+#[derive(Debug, Clone, Copy)]
+pub enum PeerAclContext {
+    OutboundConnect,
+    InboundHandshake,
+    OutboundHandshake,
+}
+
+impl fmt::Display for PeerAclContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutboundConnect => write!(f, "outbound_connect"),
+            Self::InboundHandshake => write!(f, "inbound_handshake"),
+            Self::OutboundHandshake => write!(f, "outbound_handshake"),
+        }
+    }
 }
 
 /// Loaded peer ACL state.
@@ -49,8 +67,6 @@ pub struct PeerAclSnapshot {
 pub struct PeerAcl {
     allow: HashSet<NodeAddr>,
     deny: HashSet<NodeAddr>,
-    allow_entries: BTreeSet<String>,
-    deny_entries: BTreeSet<String>,
     allow_all: bool,
     deny_all: bool,
 }
@@ -69,8 +85,8 @@ impl PeerAcl {
 
         if !acl.is_empty() {
             debug!(
-                allow_entries = acl.allow_entries.len(),
-                deny_entries = acl.deny_entries.len(),
+                allow_entries = acl.allow.len(),
+                deny_entries = acl.deny.len(),
                 allow_all = acl.allow_all,
                 deny_all = acl.deny_all,
                 "Loaded peer ACL files"
@@ -86,6 +102,8 @@ impl PeerAcl {
 
         if self.allow_all || self.allow.contains(addr) {
             PeerAclDecision::AllowList
+        } else if !self.allow.is_empty() {
+            PeerAclDecision::NotInAllowList
         } else if self.deny_all || self.deny.contains(addr) {
             PeerAclDecision::DenyList
         } else {
@@ -96,20 +114,6 @@ impl PeerAcl {
     /// Whether the ACL has no entries or wildcards.
     pub fn is_empty(&self) -> bool {
         self.allow.is_empty() && self.deny.is_empty() && !self.allow_all && !self.deny_all
-    }
-
-    /// Create a serializable snapshot of the current ACL state.
-    pub fn snapshot(&self, allow_path: &Path, deny_path: &Path) -> PeerAclSnapshot {
-        PeerAclSnapshot {
-            allow_file: allow_path.display().to_string(),
-            deny_file: deny_path.display().to_string(),
-            allow_entries: self.allow_entries.iter().cloned().collect(),
-            deny_entries: self.deny_entries.iter().cloned().collect(),
-            allow_all: self.allow_all,
-            deny_all: self.deny_all,
-            allow_count: self.allow_entries.len(),
-            deny_count: self.deny_entries.len(),
-        }
     }
 
     fn load_file(&mut self, path: &Path, is_allow: bool) {
@@ -168,10 +172,8 @@ impl PeerAcl {
 
             if is_allow {
                 self.allow.insert(*peer.node_addr());
-                self.allow_entries.insert(peer.npub());
             } else {
                 self.deny.insert(*peer.node_addr());
-                self.deny_entries.insert(peer.npub());
             }
         }
     }
@@ -187,8 +189,16 @@ pub struct PeerAclReloader {
 }
 
 impl PeerAclReloader {
-    /// Create a new ACL reloader from the configured file paths.
-    pub fn new(allow_path: PathBuf, deny_path: PathBuf) -> Self {
+    /// Create a reloader using the standard ACL file locations.
+    pub fn new() -> Self {
+        Self::with_paths(
+            PathBuf::from(DEFAULT_PEERS_ALLOW_PATH),
+            PathBuf::from(DEFAULT_PEERS_DENY_PATH),
+        )
+    }
+
+    /// Create a reloader for explicit file paths.
+    pub(crate) fn with_paths(allow_path: PathBuf, deny_path: PathBuf) -> Self {
         let last_allow_mtime = crate::upper::hosts::file_mtime(&allow_path);
         let last_deny_mtime = crate::upper::hosts::file_mtime(&deny_path);
         let acl = PeerAcl::load_files(&allow_path, &deny_path);
@@ -207,11 +217,6 @@ impl PeerAclReloader {
         &self.acl
     }
 
-    /// Return a serializable snapshot of the effective ACL.
-    pub fn snapshot(&self) -> PeerAclSnapshot {
-        self.acl.snapshot(&self.allow_path, &self.deny_path)
-    }
-
     /// Check whether either ACL file changed and reload if needed.
     pub fn check_reload(&mut self) -> bool {
         let allow_mtime = crate::upper::hosts::file_mtime(&self.allow_path);
@@ -225,14 +230,13 @@ impl PeerAclReloader {
         self.last_deny_mtime = deny_mtime;
         self.acl = PeerAcl::load_files(&self.allow_path, &self.deny_path);
 
-        let snapshot = self.snapshot();
         info!(
-            allow_file = %snapshot.allow_file,
-            deny_file = %snapshot.deny_file,
-            allow_entries = snapshot.allow_count,
-            deny_entries = snapshot.deny_count,
-            allow_all = snapshot.allow_all,
-            deny_all = snapshot.deny_all,
+            allow_file = %self.allow_path.display(),
+            deny_file = %self.deny_path.display(),
+            allow_entries = self.acl.allow.len(),
+            deny_entries = self.acl.deny.len(),
+            allow_all = self.acl.allow_all,
+            deny_all = self.acl.deny_all,
             "Reloaded peer ACL files"
         );
         true
@@ -277,6 +281,28 @@ mod tests {
     }
 
     #[test]
+    fn test_acl_allowlist_is_authoritative_when_non_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let allow = dir.path().join("peers.allow");
+        let deny = dir.path().join("peers.deny");
+        let allowed = test_npub();
+        let denied = test_npub();
+
+        std::fs::write(&allow, format!("{allowed}\n")).unwrap();
+
+        let acl = PeerAcl::load_files(&allow, &deny);
+
+        assert_eq!(
+            acl.check(&PeerIdentity::from_npub(&allowed).unwrap()),
+            PeerAclDecision::AllowList
+        );
+        assert_eq!(
+            acl.check(&PeerIdentity::from_npub(&denied).unwrap()),
+            PeerAclDecision::NotInAllowList
+        );
+    }
+
+    #[test]
     fn test_acl_deny_only() {
         let dir = tempfile::tempdir().unwrap();
         let allow = dir.path().join("peers.allow");
@@ -313,6 +339,25 @@ mod tests {
     }
 
     #[test]
+    fn test_acl_deny_ignored_when_allowlist_is_non_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let allow = dir.path().join("peers.allow");
+        let deny = dir.path().join("peers.deny");
+        let allowed = test_npub();
+        let denied = test_npub();
+
+        std::fs::write(&allow, format!("{allowed}\n")).unwrap();
+        std::fs::write(&deny, format!("{denied}\n")).unwrap();
+
+        let acl = PeerAcl::load_files(&allow, &deny);
+
+        assert_eq!(
+            acl.check(&PeerIdentity::from_npub(&denied).unwrap()),
+            PeerAclDecision::NotInAllowList
+        );
+    }
+
+    #[test]
     fn test_acl_inline_comments_and_bad_lines() {
         let dir = tempfile::tempdir().unwrap();
         let allow = dir.path().join("peers.allow");
@@ -331,7 +376,6 @@ mod tests {
             acl.check(&PeerIdentity::from_npub(&npub).unwrap()),
             PeerAclDecision::AllowList
         );
-        assert_eq!(acl.snapshot(&allow, &deny).allow_count, 1);
     }
 
     #[test]
@@ -341,7 +385,7 @@ mod tests {
         let deny = dir.path().join("peers.deny");
         let denied = test_npub();
 
-        let mut reloader = PeerAclReloader::new(allow.clone(), deny.clone());
+        let mut reloader = PeerAclReloader::with_paths(allow.clone(), deny.clone());
         assert!(!reloader.check_reload());
 
         std::thread::sleep(std::time::Duration::from_millis(5));

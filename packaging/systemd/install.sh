@@ -11,8 +11,6 @@
 #   /usr/local/bin/fipstop        TUI monitor
 #   /etc/fips/fips.yaml           Configuration (preserved if exists)
 #   /etc/fips/hosts               Host-to-npub mappings (preserved if exists)
-#   /etc/fips/peers.allow         Peer allow list (preserved if exists)
-#   /etc/fips/peers.deny          Peer deny list (preserved if exists)
 #   /etc/systemd/system/fips.service      systemd unit
 #   /etc/systemd/system/fips-dns.service  DNS routing for .fips domain
 

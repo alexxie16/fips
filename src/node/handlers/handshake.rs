@@ -1,6 +1,7 @@
 //! Handshake handlers and connection promotion.
 
 use crate::PeerIdentity;
+use crate::node::acl::PeerAclContext;
 use crate::node::wire::{Msg1Header, Msg2Header, build_msg2};
 use crate::node::{Node, NodeError};
 use crate::peer::{ActivePeer, PeerConnection, PromotionResult, cross_connection_winner};
@@ -344,11 +345,15 @@ impl Node {
         // If possible_restart was true but peer is no longer in self.peers
         // (removed by another path), fall through to process as new connection.
 
-        if matches!(
-            self.peer_acl_decision(&peer_identity),
-            crate::node::acl::PeerAclDecision::DenyList
-        ) {
-            debug!(npub = %peer_identity.npub(), "Rejected inbound peer by ACL");
+        if self
+            .authorize_peer(
+                &peer_identity,
+                PeerAclContext::InboundHandshake,
+                packet.transport_id,
+                &packet.remote_addr,
+            )
+            .is_err()
+        {
             self.msg1_rate_limiter.complete_handshake();
             return;
         }
@@ -647,11 +652,15 @@ impl Node {
             (peer_identity, conn.our_index())
         };
 
-        if matches!(
-            self.peer_acl_decision(&peer_identity),
-            crate::node::acl::PeerAclDecision::DenyList
-        ) {
-            debug!(npub = %peer_identity.npub(), "Rejected outbound peer by ACL");
+        if self
+            .authorize_peer(
+                &peer_identity,
+                PeerAclContext::OutboundHandshake,
+                packet.transport_id,
+                &packet.remote_addr,
+            )
+            .is_err()
+        {
             self.pending_outbound.remove(&key);
             if let Some(link) = self.links.get(&link_id) {
                 let tid = link.transport_id();

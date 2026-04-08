@@ -1,0 +1,2 @@
+# Intentionally empty for this test.
+# When peers.allow is non-empty, only allowlisted peers are permitted.

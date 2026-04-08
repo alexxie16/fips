@@ -555,11 +555,6 @@ pub fn show_routing(node: &Node) -> Value {
     })
 }
 
-/// `show_acl` — Loaded peer ACL state.
-pub fn show_acl(node: &Node) -> Value {
-    serde_json::to_value(node.peer_acl_snapshot()).unwrap_or_default()
-}
-
 /// Dispatch a command string to the appropriate query function.
 pub fn dispatch(node: &Node, command: &str) -> super::protocol::Response {
     match command {
@@ -574,7 +569,6 @@ pub fn dispatch(node: &Node, command: &str) -> super::protocol::Response {
         "show_connections" => super::protocol::Response::ok(show_connections(node)),
         "show_transports" => super::protocol::Response::ok(show_transports(node)),
         "show_routing" => super::protocol::Response::ok(show_routing(node)),
-        "show_acl" => super::protocol::Response::ok(show_acl(node)),
         _ => super::protocol::Response::error(format!("unknown command: {}", command)),
     }
 }

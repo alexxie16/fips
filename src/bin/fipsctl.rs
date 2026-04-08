@@ -63,19 +63,6 @@ enum Commands {
         /// Peer identifier: npub (bech32) or hostname from /etc/fips/hosts
         peer: String,
     },
-    /// Show or reload peer ACLs
-    Acl {
-        #[command(subcommand)]
-        action: AclCommands,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum AclCommands {
-    /// Show the loaded peer ACL state
-    Show,
-    /// Reload peer ACL files immediately
-    Reload,
 }
 
 #[derive(Subcommand, Debug)]
@@ -302,10 +289,6 @@ fn main() {
             let npub = resolve_peer(peer);
             build_command("disconnect", serde_json::json!({"npub": npub}))
         }
-        Commands::Acl { action } => match action {
-            AclCommands::Show => build_query("show_acl"),
-            AclCommands::Reload => build_query("reload_acl"),
-        },
         Commands::Keygen { .. } => unreachable!(),
     };
 

@@ -33,9 +33,9 @@ use thiserror::Error;
 #[cfg(feature = "gateway")]
 pub use gateway::{ConntrackConfig, GatewayConfig, GatewayDnsConfig};
 pub use node::{
-    AclConfig, BloomConfig, BuffersConfig, CacheConfig, ControlConfig, DiscoveryConfig,
-    LimitsConfig, NodeConfig, RateLimitConfig, RekeyConfig, RetryConfig, SessionConfig,
-    SessionMmpConfig, TreeConfig,
+    BloomConfig, BuffersConfig, CacheConfig, ControlConfig, DiscoveryConfig, LimitsConfig,
+    NodeConfig, RateLimitConfig, RekeyConfig, RetryConfig, SessionConfig, SessionMmpConfig,
+    TreeConfig,
 };
 pub use peer::{ConnectPolicy, PeerAddress, PeerConfig};
 pub use transport::{
