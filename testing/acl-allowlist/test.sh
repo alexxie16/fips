@@ -7,8 +7,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTING_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$TESTING_DIR/.." && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+GENERATE_CONFIGS="$SCRIPT_DIR/generate-configs.sh"
 
 SKIP_BUILD=false
 KEEP_UP=false
@@ -39,6 +39,13 @@ peer_npubs() {
         | python3 -c 'import json,sys; data=json.load(sys.stdin); print(" ".join(sorted(p["npub"] for p in data.get("peers", []) if p.get("connectivity") == "connected")))'
 }
 
+acl_field() {
+    local container="$1"
+    local field="$2"
+    docker exec "$container" fipsctl acl show \
+        | python3 -c 'import json,sys; data=json.load(sys.stdin); field=sys.argv[1]; value=data.get(field); print(" ".join(sorted(value)) if isinstance(value, list) else ("" if value is None else value))' "$field"
+}
+
 assert_peer_set() {
     local container="$1"
     local expected="$2"
@@ -51,6 +58,21 @@ assert_peer_set() {
         exit 1
     fi
     echo "PASS: $container peers match expected set"
+}
+
+assert_acl_field() {
+    local container="$1"
+    local field="$2"
+    local expected="$3"
+    local actual
+    actual="$(acl_field "$container" "$field")"
+    if [ "$actual" != "$expected" ]; then
+        echo "FAIL: $container ACL field $field mismatch" >&2
+        echo "  expected: $expected" >&2
+        echo "  actual:   $actual" >&2
+        exit 1
+    fi
+    echo "PASS: $container ACL field $field matches expected value"
 }
 
 wait_for_peers_exact() {
@@ -85,10 +107,31 @@ assert_log_contains() {
     echo "PASS: $container logs contain expected ACL rejection"
 }
 
+assert_ping() {
+    local container="$1"
+    local destination="$2"
+    local timeout="${3:-20}"
+
+    for _ in $(seq 1 "$timeout"); do
+        if docker exec "$container" ping6 -c 1 -W 2 "$destination" >/dev/null 2>&1; then
+            echo "PASS: $container reached $destination"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "FAIL: $container could not reach $destination in ${timeout}s" >&2
+    docker exec "$container" fipsctl show sessions >&2 || true
+    exit 1
+}
+
 if [ "$SKIP_BUILD" = false ]; then
     log "Building Linux test binaries"
     "$TESTING_DIR/scripts/build.sh" --no-docker
 fi
+
+log "Generating ACL allowlist fixtures"
+"$GENERATE_CONFIGS"
 
 log "Starting ACL allowlist harness"
 docker compose -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
@@ -102,7 +145,7 @@ wait_for_peers_exact fips-acl-d 0 5
 wait_for_peers_exact fips-acl-e 1 40
 wait_for_peers_exact fips-acl-f 1 40
 
-log "Verifying peer sets"
+log "Verifying direct peer sets"
 assert_peer_set fips-acl-a "npub1tdwa4vjrjl33pcjdpf2t4p027nl86xrx24g4d3avg4vwvayr3g8qhd84le npub1x5z9rwzzm26q9verutx4aajhf2zw2pyp34c6whhde2zduxqav40qgq36l6 npub1ytrut7gjncn2zfnhn56c0zgftf0w6p99gf6fu8j73hzw5603zglqc9av6c"
 assert_peer_set fips-acl-b "npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m"
 assert_peer_set fips-acl-c ""
@@ -110,12 +153,30 @@ assert_peer_set fips-acl-d ""
 assert_peer_set fips-acl-e "npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m"
 assert_peer_set fips-acl-f "npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m"
 
+log "Checking alias-based ACL resolution"
+assert_acl_field fips-acl-a allow_raw_entries "node-a node-b node-e node-f"
+assert_acl_field fips-acl-a allow_entries "npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m npub1tdwa4vjrjl33pcjdpf2t4p027nl86xrx24g4d3avg4vwvayr3g8qhd84le npub1x5z9rwzzm26q9verutx4aajhf2zw2pyp34c6whhde2zduxqav40qgq36l6 npub1ytrut7gjncn2zfnhn56c0zgftf0w6p99gf6fu8j73hzw5603zglqc9av6c"
+assert_acl_field fips-acl-c allow_raw_entries "node-a node-b node-c node-d node-e node-f"
+assert_acl_field fips-acl-c allow_entries "npub1cld9yay0u24davpu6c35l4vldrhzvaq66pcqtg9a0j2cnjrn9rtsxx2pe6 npub1n9lpnv0592cc2ps6nm0ca3qls642vx7yjsv35rkxqzj2vgds52sqgpverl npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m npub1tdwa4vjrjl33pcjdpf2t4p027nl86xrx24g4d3avg4vwvayr3g8qhd84le npub1x5z9rwzzm26q9verutx4aajhf2zw2pyp34c6whhde2zduxqav40qgq36l6 npub1ytrut7gjncn2zfnhn56c0zgftf0w6p99gf6fu8j73hzw5603zglqc9av6c"
+
+log "Checking A/B/E/F mesh reachability"
+assert_ping fips-acl-a node-b.fips
+assert_ping fips-acl-a node-e.fips
+assert_ping fips-acl-a node-f.fips
+assert_ping fips-acl-b node-a.fips
+assert_ping fips-acl-b node-e.fips
+assert_ping fips-acl-b node-f.fips
+assert_ping fips-acl-e node-a.fips
+assert_ping fips-acl-e node-b.fips
+assert_ping fips-acl-e node-f.fips
+assert_ping fips-acl-f node-a.fips
+assert_ping fips-acl-f node-b.fips
+assert_ping fips-acl-f node-e.fips
+
 log "Checking ACL rejection logs"
-assert_log_contains fips-acl-c "npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m"
-assert_log_contains fips-acl-c "context=outbound_connect"
-assert_log_contains fips-acl-c "decision=not in allowlist"
-assert_log_contains fips-acl-d "npub1sjlh2c3x9w7kjsqg2ay080n2lff2uvt325vpan33ke34rn8l5jcqawh57m"
-assert_log_contains fips-acl-d "context=outbound_connect"
-assert_log_contains fips-acl-d "decision=not in allowlist"
+assert_log_contains fips-acl-a "npub1cld9yay0u24davpu6c35l4vldrhzvaq66pcqtg9a0j2cnjrn9rtsxx2pe6"
+assert_log_contains fips-acl-a "npub1n9lpnv0592cc2ps6nm0ca3qls642vx7yjsv35rkxqzj2vgds52sqgpverl"
+assert_log_contains fips-acl-a "context=inbound_handshake"
+assert_log_contains fips-acl-a "decision=not in allowlist"
 
 log "ACL allowlist integration test passed"
