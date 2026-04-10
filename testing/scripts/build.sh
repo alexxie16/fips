@@ -2,8 +2,8 @@
 # Build FIPS binaries and the unified test Docker image.
 #
 # Supports cross-compilation from macOS to Linux using cargo-zigbuild.
-# The test harness only needs `fips` and `fipsctl`, so it builds those bins
-# without default features to avoid optional BLE/DBus dependencies.
+# Test harnesses use `fips`, `fipsctl`, `fipstop`, and `fips-gateway`, so build
+# only the required optional features to avoid BLE/DBus dependencies.
 #
 # Usage: ./build.sh [--no-docker]
 #   --no-docker  Skip Docker image build (just compile and copy binaries)
@@ -47,12 +47,12 @@ if [ "$UNAME_S" = "Darwin" ]; then
     fi
 
     echo "Building test binaries for Linux (release) using cargo-zigbuild..."
-    cargo zigbuild --release --target "$CARGO_TARGET" --manifest-path="$PROJECT_ROOT/Cargo.toml" --no-default-features --bin fips --bin fipsctl
+    cargo zigbuild --release --target "$CARGO_TARGET" --manifest-path="$PROJECT_ROOT/Cargo.toml" --no-default-features --features tui,gateway --bin fips --bin fipsctl --bin fipstop --bin fips-gateway
 
     TARGET_DIR="$PROJECT_ROOT/target/$CARGO_TARGET/release"
 else
     echo "Building test binaries (release)..."
-    cargo build --release --manifest-path="$PROJECT_ROOT/Cargo.toml" --no-default-features --bin fips --bin fipsctl
+    cargo build --release --manifest-path="$PROJECT_ROOT/Cargo.toml" --no-default-features --features tui,gateway --bin fips --bin fipsctl --bin fipstop --bin fips-gateway
 
     TARGET_DIR="$PROJECT_ROOT/target/release"
 fi
@@ -61,10 +61,12 @@ echo "Copying binaries to $DOCKER_DIR/"
 cp "$TARGET_DIR/fips" "$DOCKER_DIR/fips"
 cp "$TARGET_DIR/fipsctl" "$DOCKER_DIR/fipsctl"
 [ -f "$TARGET_DIR/fipstop" ] && cp "$TARGET_DIR/fipstop" "$DOCKER_DIR/fipstop" || true
+[ -f "$TARGET_DIR/fips-gateway" ] && cp "$TARGET_DIR/fips-gateway" "$DOCKER_DIR/fips-gateway" || true
 chmod +x "$DOCKER_DIR/fips" "$DOCKER_DIR/fipsctl"
 [ -f "$DOCKER_DIR/fipstop" ] && chmod +x "$DOCKER_DIR/fipstop" || true
+[ -f "$DOCKER_DIR/fips-gateway" ] && chmod +x "$DOCKER_DIR/fips-gateway" || true
 
-echo "Done. Binaries at $DOCKER_DIR/{fips,fipsctl}"
+echo "Done. Binaries at $DOCKER_DIR/{fips,fipsctl,fipstop,fips-gateway}"
 
 if [ "$BUILD_DOCKER" = true ]; then
     echo ""
