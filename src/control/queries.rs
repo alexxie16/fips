@@ -555,6 +555,25 @@ pub fn show_routing(node: &Node) -> Value {
     })
 }
 
+/// `show_acl` — Loaded peer ACL state.
+pub fn show_acl(node: &Node) -> Value {
+    let status = node.peer_acl_status();
+
+    json!({
+        "allow_file": status.allow_file,
+        "deny_file": status.deny_file,
+        "enforcement_active": status.enforcement_active,
+        "effective_mode": status.effective_mode,
+        "default_decision": status.default_decision,
+        "allow_all": status.allow_all,
+        "deny_all": status.deny_all,
+        "allow_raw_entries": status.allow_raw_entries,
+        "deny_raw_entries": status.deny_raw_entries,
+        "allow_entries": status.allow_entries,
+        "deny_entries": status.deny_entries,
+    })
+}
+
 /// Dispatch a command string to the appropriate query function.
 pub fn dispatch(node: &Node, command: &str) -> super::protocol::Response {
     match command {
@@ -569,6 +588,7 @@ pub fn dispatch(node: &Node, command: &str) -> super::protocol::Response {
         "show_connections" => super::protocol::Response::ok(show_connections(node)),
         "show_transports" => super::protocol::Response::ok(show_transports(node)),
         "show_routing" => super::protocol::Response::ok(show_routing(node)),
+        "show_acl" => super::protocol::Response::ok(show_acl(node)),
         _ => super::protocol::Response::error(format!("unknown command: {}", command)),
     }
 }
