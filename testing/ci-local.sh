@@ -14,7 +14,7 @@
 #   -h, --help           Show this help
 #
 # Integration suites:
-#   static-mesh, static-chain, rekey, gateway,
+#   static-mesh, static-chain, rekey, acl-allowlist, gateway,
 #   chaos-smoke-10, chaos-churn-mixed-10, chaos-ethernet-mesh,
 #   chaos-ethernet-only, chaos-tcp-mesh, chaos-bottleneck-parent,
 #   chaos-cost-avoidance, chaos-cost-reeval, chaos-cost-stability,
@@ -48,6 +48,7 @@ ONLY_SUITE=""
 # All integration suites matching ci.yml
 STATIC_SUITES=(static-mesh static-chain)
 REKEY_SUITES=(rekey)
+ACL_SUITES=(acl-allowlist)
 # Each entry: "display-name scenario [--flag value ...]"
 CHAOS_SUITES=(
     "smoke-10 smoke-10"
@@ -92,6 +93,9 @@ list_suites() {
     echo ""
     echo "  Rekey:"
     for s in "${REKEY_SUITES[@]}"; do echo "    $s"; done
+    echo ""
+    echo "  ACL:"
+    for s in "${ACL_SUITES[@]}"; do echo "    $s"; done
     echo ""
     echo "  Chaos scenarios:"
     for entry in "${CHAOS_SUITES[@]}"; do
@@ -279,6 +283,24 @@ run_chaos() {
     record "chaos-$name" $rc
 }
 
+# Run the ACL allowlist integration test
+run_acl() {
+    local compose="testing/acl-allowlist/docker-compose.yml"
+    local rc=0
+
+    info "[acl-allowlist] Running integration test"
+    if bash testing/acl-allowlist/test.sh --skip-build --keep-up 2>&1; then
+        rc=0
+    else
+        rc=1
+        info "[acl-allowlist] Collecting failure logs"
+        docker compose -f "$compose" logs --no-color 2>&1 | tail -100
+    fi
+
+    docker compose -f "$compose" down --volumes --remove-orphans 2>/dev/null
+    record "acl-allowlist" $rc
+}
+
 # Run gateway integration test
 run_gateway() {
     local compose="testing/static/docker-compose.yml"
@@ -346,6 +368,9 @@ run_integration() {
     # Rekey
     run_rekey
 
+    # ACL allowlist
+    run_acl
+
     # Gateway
     run_gateway
 
@@ -411,6 +436,8 @@ run_suite() {
             run_static "${suite#static-}" ;;
         rekey)
             run_rekey ;;
+        acl-allowlist)
+            run_acl ;;
         gateway)
             run_gateway ;;
         chaos-*)
